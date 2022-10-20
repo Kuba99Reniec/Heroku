@@ -1,36 +1,91 @@
-from flask import Flask, render_template
-from datetime import datetime
-import foo
+#!/usr/bin/env python
+# coding: utf-8
+f!pip install dash
+!pip install pandas
+import dash
+from dash.dependencies import Input, Output, State
+import dash_core_components as dcc
+import dash_html_components as html
+import plotly.graph_objects as go
+import pandas as pd
 
+dane_cawi_capi = pd.read_csv("https://raw.githubusercontent.com/Kuba99Reniec/wykresy/master/dane_do_dasha.txt")
+options = []
+for col in dane_cawi_capi.columns[:-1]:
+    options.append({'label':'{}'.format(col, col), 'value':col})
+value = 'Wielkość gospodarstwa domowego (6 kategorii)'
+zmienne = pd.read_csv("https://raw.githubusercontent.com/Kuba99Reniec/wykresy/master/5_opis_zmiennych_20220819_podwojny_konwerter_opinie.txt", sep="\t")
+wartosci = pd.read_csv("https://raw.githubusercontent.com/Kuba99Reniec/wykresy/master/6.txt", sep="\t", decimal =",")
+wartosci = wartosci.merge(zmienne, on = "Nazwa zmiennej")
+zmienna = 'RS: Płeć'
 
-
-
-# Normal flask app stuff
-
-app = Flask(__name__)
-
-@app.route('/')
-def homepage():
-    the_time = datetime.now().strftime("%A, %d %b %Y %l:%M %p")
-    the_quakes = foo.get_quake_data();
-
-    # iterate through each quake, give them a "latlng" attribute
-    # and then a separate Google Map URL
-    for q in the_quakes:
-        q['latlng'] = q['latitude'] + ',' + q['longitude']
-        q['gmap_url'] = foo.prepare_static_gmap_url(q['latlng'],
-                                                widthheight='200x200',
-                                                zoom=5)
-
-    # get all the locations from each marker as a single list of lat,lng strings
-    locs = [q['latlng'] for q in the_quakes]
-    world_map_url = foo.prepare_static_gmap_url(locs, widthheight='800x300')
-
-    html = render_template('homepage.html',
-                            time=the_time, quakes=the_quakes,
-                            world_map_url=world_map_url)
-    return html
+external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
+app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
+app.layout = html.Div([
+    html.H3('Porównanie rozkładów zmiennych: CAWI vs CAWI + CAPI (IX 2021 - VIII 2022)'),
+    html.Label("Wybierz zmienną:"),
+    dcc.Dropdown(
+            id = 'my_dropdown',
+            options= options,
+            value='Choose columns'
+        ),
+    html.Label(id='my_label'),
+    dcc.Graph(
+        id='graph',
+        figure=go.Figure()
+    )
+])
+@app.callback(
+    Output('graph', 'figure'),
+    Input('my_dropdown', 'value'),
+    State('graph', 'figure'),
+)
+def update_figure(value, fig):
+    zmienna = value
+    df_pom = pd.DataFrame(dane_cawi_capi[dane_cawi_capi['badanie'] == 'cawi'][zmienna].value_counts())
+    names_cawi_pom = df_pom.index.to_list()
+    values_cawi = df_pom[zmienna].to_list()
+    values_cawi_capi = []
+    names_cawi = []
+    for i in names_cawi_pom:
+        values_cawi_capi.append(len(dane_cawi_capi[dane_cawi_capi[zmienna] == i]))
+        if zmienna in wartosci['Etykieta zmiennej'].to_list():
+            names_cawi.append(
+                wartosci[(wartosci['Etykieta zmiennej'] == zmienna) & (wartosci['wartość'] == i)]['Etykieta'].to_list()[
+                    0])
+        else:
+            names_cawi = names_cawi_pom
+    fig = go.Figure()
+    fig.add_trace(go.Funnelarea(
+        name="CAWI",
+        scalegroup="first",
+        text=names_cawi,
+        values=values_cawi,
+        showlegend=False,
+        marker={"colors": ["lawngreen", "darkorange", "red", "yellow", "blue", "peru", "darkviolet"]},
+        title={"position": "top center", "text": "CAWI"},
+    ))
+    fig.add_trace(go.Funnelarea(
+        name="CAWI + CAPI",
+        scalegroup="third",
+        text=names_cawi,
+        values=values_cawi_capi,
+        textinfo="percent",
+        title={"position": "top center", "text": "CAWI+CAPI"},
+        showlegend=False,
+        domain={"x": [.75, 1]}
+    ))
+    fig.update_layout(
+        autosize=False,
+        width=1150,
+        height=600)
+    fig.update_traces(title_font_size=20)
+    fig.update_traces(title_position='top center')
+    fig.update_layout(
+        margin=dict(l=20, r=20, t=20, b=25),
+    )
+    return fig
 
 
 if __name__ == '__main__':
-    app.run(debug=True, use_reloader=True)
+    app.run_server(debug=True)
