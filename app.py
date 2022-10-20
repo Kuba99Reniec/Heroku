@@ -1,4 +1,4 @@
-f!pip install dash
+!pip install dash
 !pip install pandas
 import dash
 from dash.dependencies import Input, Output, State
